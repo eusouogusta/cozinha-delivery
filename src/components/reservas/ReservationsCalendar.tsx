@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 type Status = "Reservado" | "Aguardando cliente" | "Cancelado";
 type Modality = "Presencial" | "Entrega";
+type StatusFilter = Status | "Todos";
+type ModalityFilter = Modality | "Todos";
 
 type EventItem = {
   id: number;
@@ -47,14 +49,28 @@ export function ReservationsCalendar() {
   const [viewDate, setViewDate] = useState(new Date(2026, 8, 1));
   const [selectedDate, setSelectedDate] = useState("2026-09-12");
   const [showNewEvent, setShowNewEvent] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("Todos");
+  const [modalityFilter, setModalityFilter] = useState<ModalityFilter>("Todos");
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayMondayIndex = (new Date(year, month, 1).getDay() + 6) % 7;
 
+  const filteredEvents = useMemo(() => {
+    const normalizedSearch = clientSearch.trim().toLocaleLowerCase("pt-BR");
+
+    return events.filter((event) => (
+      event.client.toLocaleLowerCase("pt-BR").includes(normalizedSearch)
+      && (statusFilter === "Todos" || event.status === statusFilter)
+      && (modalityFilter === "Todos" || event.modality === modalityFilter)
+    ));
+  }, [clientSearch, events, modalityFilter, statusFilter]);
   const selectedEvents = useMemo(() => events.filter((event) => event.date === selectedDate), [events, selectedDate]);
+  const filteredSelectedEvents = useMemo(() => filteredEvents.filter((event) => event.date === selectedDate), [filteredEvents, selectedDate]);
   const selectedDay = selectedDate ? Number(selectedDate.slice(-2)) : null;
+  const hasActiveFilters = clientSearch !== "" || statusFilter !== "Todos" || modalityFilter !== "Todos";
 
   function navigateToMonth(targetYear: number, targetMonth: number) {
     const next = new Date(targetYear, targetMonth, 1);
@@ -71,6 +87,12 @@ export function ReservationsCalendar() {
   function goToToday() {
     const today = new Date();
     navigateToMonth(today.getFullYear(), today.getMonth());
+  }
+
+  function clearFilters() {
+    setClientSearch("");
+    setStatusFilter("Todos");
+    setModalityFilter("Todos");
   }
 
   function createEvent(event: Omit<EventItem, "id">) {
@@ -106,6 +128,31 @@ export function ReservationsCalendar() {
         <Legend dot="bg-rose-400" label="Cancelado" />
       </div>
 
+      <div className="grid gap-3 rounded-2xl border border-border bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_220px_180px_auto] lg:items-end">
+        <label className="flex flex-col gap-1.5 text-xs font-semibold text-charcoal">
+          Buscar cliente
+          <input type="search" value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nome do cliente" className="rounded-xl border border-border px-3 py-2.5 text-sm font-normal text-charcoal outline-none placeholder:text-muted/70 focus:border-primary" />
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-semibold text-charcoal">
+          Status
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} className="rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-charcoal outline-none focus:border-primary">
+            <option>Todos</option>
+            <option>Aguardando cliente</option>
+            <option>Reservado</option>
+            <option>Cancelado</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-xs font-semibold text-charcoal">
+          Modalidade
+          <select value={modalityFilter} onChange={(event) => setModalityFilter(event.target.value as ModalityFilter)} className="rounded-xl border border-border bg-white px-3 py-2.5 text-sm font-normal text-charcoal outline-none focus:border-primary">
+            <option>Todos</option>
+            <option>Presencial</option>
+            <option>Entrega</option>
+          </select>
+        </label>
+        <button onClick={clearFilters} disabled={!hasActiveFilters} className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold text-charcoal hover:bg-background disabled:cursor-not-allowed disabled:opacity-50">Limpar filtros</button>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
@@ -129,21 +176,22 @@ export function ReservationsCalendar() {
             {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => {
               const dateKey = keyForDate(year, month, day);
               const dayEvents = events.filter((event) => event.date === dateKey);
+              const filteredDayEvents = filteredEvents.filter((event) => event.date === dateKey);
               const presencial = dayEvents.filter((event) => event.modality === "Presencial" && event.status === "Reservado").length;
-              const delivery = dayEvents.filter((event) => event.modality === "Entrega" && event.status !== "Cancelado").length;
-              const waiting = dayEvents.filter((event) => event.status === "Aguardando cliente").length;
+              const delivery = filteredDayEvents.filter((event) => event.modality === "Entrega" && event.status !== "Cancelado").length;
+              const waiting = filteredDayEvents.filter((event) => event.status === "Aguardando cliente").length;
               const isSelected = dateKey === selectedDate;
 
               return (
                 <button key={dateKey} onClick={() => setSelectedDate(dateKey)} className={`min-h-20 border-b border-r border-border p-1.5 text-left align-top transition-colors sm:min-h-28 sm:p-2 ${isSelected ? "bg-orange-50 ring-1 ring-inset ring-primary" : "bg-white hover:bg-background/70"}`}>
                   <span className="text-xs font-semibold text-charcoal sm:text-sm">{day}</span>
-                  {dayEvents.length > 0 && (
+                  {(presencial > 0 || filteredDayEvents.length > 0) && (
                     <div className="mt-1.5 space-y-1">
                       {presencial > 0 && <p className={`rounded-md px-1 py-0.5 text-[9px] font-medium sm:text-[11px] ${presencial >= 3 ? "bg-rose-50 text-rose-700" : "bg-orange-50 text-primary-dark"}`}>Presencial {presencial}/3</p>}
                       {delivery > 0 && <p className="hidden rounded-md bg-sky-50 px-1 py-0.5 text-[11px] font-medium text-sky-700 sm:block">Entrega {delivery}</p>}
                       {waiting > 0 && <p className="hidden text-[10px] text-amber-700 sm:block">{waiting} aguardando</p>}
                       <div className="flex gap-1 sm:hidden">
-                        {dayEvents.slice(0, 3).map((event) => <span key={event.id} className={`h-1.5 w-1.5 rounded-full ${event.status === "Reservado" ? "bg-emerald-500" : event.status === "Aguardando cliente" ? "bg-amber-500" : "bg-rose-400"}`} />)}
+                        {filteredDayEvents.slice(0, 3).map((event) => <span key={event.id} className={`h-1.5 w-1.5 rounded-full ${event.status === "Reservado" ? "bg-emerald-500" : event.status === "Aguardando cliente" ? "bg-amber-500" : "bg-rose-400"}`} />)}
                       </div>
                     </div>
                   )}
@@ -163,7 +211,9 @@ export function ReservationsCalendar() {
           <div className="mt-4 space-y-3">
             {selectedEvents.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted">Nenhum evento nesta data.</p>
-            ) : selectedEvents.map((event) => (
+            ) : filteredSelectedEvents.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted">Nenhum evento corresponde aos filtros selecionados.</p>
+            ) : filteredSelectedEvents.map((event) => (
               <article key={event.id} className="rounded-xl border border-border p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
