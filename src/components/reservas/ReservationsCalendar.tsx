@@ -16,7 +16,7 @@ type EventItem = {
   status: Status;
 };
 
-const events: EventItem[] = [
+const initialEvents: EventItem[] = [
   { id: 1, date: "2026-09-05", client: "Marina Alves", time: "12:00", location: "Espaço Jardins", modality: "Presencial", guests: 60, status: "Reservado" },
   { id: 2, date: "2026-09-05", client: "Rafael Lima", time: "18:30", location: "Salão Imperial", modality: "Presencial", guests: 80, status: "Aguardando cliente" },
   { id: 3, date: "2026-09-12", client: "João Martins", time: "10:00", location: "Casa do cliente", modality: "Presencial", guests: 50, status: "Reservado" },
@@ -43,6 +43,7 @@ function keyForDate(year: number, month: number, day: number) {
 }
 
 export function ReservationsCalendar() {
+  const [events, setEvents] = useState<EventItem[]>(initialEvents);
   const [viewDate, setViewDate] = useState(new Date(2026, 8, 1));
   const [selectedDate, setSelectedDate] = useState("2026-09-12");
   const [showNewEvent, setShowNewEvent] = useState(false);
@@ -52,13 +53,39 @@ export function ReservationsCalendar() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayMondayIndex = (new Date(year, month, 1).getDay() + 6) % 7;
 
-  const selectedEvents = useMemo(() => events.filter((event) => event.date === selectedDate), [selectedDate]);
+  const selectedEvents = useMemo(() => events.filter((event) => event.date === selectedDate), [events, selectedDate]);
   const selectedDay = selectedDate ? Number(selectedDate.slice(-2)) : null;
 
-  function changeMonth(delta: number) {
-    const next = new Date(year, month + delta, 1);
+  function navigateToMonth(targetYear: number, targetMonth: number) {
+    const next = new Date(targetYear, targetMonth, 1);
+    const nextMonthKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+
     setViewDate(next);
-    setSelectedDate("");
+    setSelectedDate((currentDate) => currentDate.startsWith(nextMonthKey) ? currentDate : "");
+  }
+
+  function changeMonth(delta: number) {
+    navigateToMonth(year, month + delta);
+  }
+
+  function goToToday() {
+    const today = new Date();
+    navigateToMonth(today.getFullYear(), today.getMonth());
+  }
+
+  function createEvent(event: Omit<EventItem, "id">) {
+    setEvents((currentEvents) => [
+      ...currentEvents,
+      {
+        ...event,
+        id: Math.max(0, ...currentEvents.map((currentEvent) => currentEvent.id)) + 1,
+      },
+    ]);
+
+    const [eventYear, eventMonth] = event.date.split("-").map(Number);
+    setViewDate(new Date(eventYear, eventMonth - 1, 1));
+    setSelectedDate(event.date);
+    setShowNewEvent(false);
   }
 
   return (
@@ -81,9 +108,15 @@ export function ReservationsCalendar() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
             <button onClick={() => changeMonth(-1)} aria-label="Mês anterior" className="rounded-lg px-3 py-2 text-charcoal hover:bg-background">←</button>
-            <h3 className="font-semibold text-charcoal">{monthNames[month]} {year}</h3>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <select aria-label="Mês" value={month} onChange={(event) => navigateToMonth(year, Number(event.target.value))} className="rounded-lg border border-border bg-white px-2 py-2 text-sm font-semibold text-charcoal outline-none focus:border-primary">
+                {monthNames.map((monthName, monthIndex) => <option key={monthName} value={monthIndex}>{monthName}</option>)}
+              </select>
+              <input aria-label="Ano" type="number" value={year} onChange={(event) => navigateToMonth(Number(event.target.value), month)} className="w-24 rounded-lg border border-border px-2 py-2 text-sm font-semibold text-charcoal outline-none focus:border-primary" />
+              <button onClick={goToToday} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-charcoal hover:bg-background">Hoje</button>
+            </div>
             <button onClick={() => changeMonth(1)} aria-label="Próximo mês" className="rounded-lg px-3 py-2 text-charcoal hover:bg-background">→</button>
           </div>
 
@@ -149,7 +182,7 @@ export function ReservationsCalendar() {
         </aside>
       </div>
 
-      {showNewEvent && <NewEventModal onClose={() => setShowNewEvent(false)} />}
+      {showNewEvent && <NewEventModal initialDate={selectedDate} onClose={() => setShowNewEvent(false)} onCreate={createEvent} />}
     </div>
   );
 }
@@ -158,32 +191,47 @@ function Legend({ dot, label }: { dot: string; label: string }) {
   return <span className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${dot}`} />{label}</span>;
 }
 
-function NewEventModal({ onClose }: { onClose: () => void }) {
+function NewEventModal({ initialDate, onClose, onCreate }: { initialDate: string; onClose: () => void; onCreate: (event: Omit<EventItem, "id">) => void }) {
+  function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    const formData = new FormData(formEvent.currentTarget);
+
+    onCreate({
+      client: String(formData.get("client")),
+      location: String(formData.get("location")),
+      date: String(formData.get("date")),
+      time: String(formData.get("time")),
+      modality: String(formData.get("modality")) as Modality,
+      guests: Number(formData.get("guests")),
+      status: String(formData.get("status")) as Status,
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onMouseDown={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+      <form className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onMouseDown={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
         <div className="flex items-start justify-between gap-4">
-          <div><h3 className="text-lg font-semibold text-charcoal">Novo evento</h3><p className="mt-1 text-sm text-muted">Prévia visual — os dados ainda não serão salvos.</p></div>
-          <button onClick={onClose} className="rounded-lg px-2 py-1 text-muted hover:bg-background" aria-label="Fechar">✕</button>
+          <div><h3 className="text-lg font-semibold text-charcoal">Novo evento</h3><p className="mt-1 text-sm text-muted">Cadastre um evento na agenda.</p></div>
+          <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-muted hover:bg-background" aria-label="Fechar">✕</button>
         </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Field label="Nome do cliente" placeholder="Ex.: João Silva" />
-          <Field label="Local" placeholder="Local do evento" />
-          <Field label="Data" type="date" />
-          <Field label="Horário" type="time" />
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal">Modalidade<select className="rounded-xl border border-border bg-white px-3 py-2.5 font-normal outline-none focus:border-primary"><option>Presencial</option><option>Entrega</option></select></label>
-          <Field label="Convidados" type="number" placeholder="30" />
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal sm:col-span-2">Status<select className="rounded-xl border border-border bg-white px-3 py-2.5 font-normal outline-none focus:border-primary"><option>Aguardando cliente</option><option>Reservado</option><option>Cancelado</option></select></label>
+          <Field label="Nome do cliente" name="client" placeholder="Ex.: João Silva" />
+          <Field label="Local" name="location" placeholder="Local do evento" />
+          <Field label="Data" name="date" type="date" defaultValue={initialDate} />
+          <Field label="Horário" name="time" type="time" />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal">Modalidade<select name="modality" className="rounded-xl border border-border bg-white px-3 py-2.5 font-normal outline-none focus:border-primary"><option>Presencial</option><option>Entrega</option></select></label>
+          <Field label="Convidados" name="guests" type="number" placeholder="30" />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal sm:col-span-2">Status<select name="status" className="rounded-xl border border-border bg-white px-3 py-2.5 font-normal outline-none focus:border-primary"><option>Aguardando cliente</option><option>Reservado</option><option>Cancelado</option></select></label>
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold text-charcoal hover:bg-background">Cancelar</button>
-          <button onClick={onClose} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-cream hover:bg-primary-dark">Simular cadastro</button>
+          <button type="button" onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-sm font-semibold text-charcoal hover:bg-background">Cancelar</button>
+          <button type="submit" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-cream hover:bg-primary-dark">Cadastrar evento</button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
 
-function Field({ label, type = "text", placeholder }: { label: string; type?: string; placeholder?: string }) {
-  return <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal">{label}<input type={type} placeholder={placeholder} className="rounded-xl border border-border px-3 py-2.5 font-normal text-charcoal outline-none placeholder:text-muted/70 focus:border-primary" /></label>;
+function Field({ label, name, type = "text", placeholder, defaultValue }: { label: string; name: string; type?: string; placeholder?: string; defaultValue?: string }) {
+  return <label className="flex flex-col gap-1.5 text-sm font-medium text-charcoal">{label}<input name={name} type={type} placeholder={placeholder} defaultValue={defaultValue} required className="rounded-xl border border-border px-3 py-2.5 font-normal text-charcoal outline-none placeholder:text-muted/70 focus:border-primary" /></label>;
 }
